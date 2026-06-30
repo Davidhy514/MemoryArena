@@ -61,13 +61,18 @@ class WebShopAgent(BaseAgent):
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         system_prompt: Optional[str] = None,
+        backend: str = "openai",
     ):
         super().__init__(model_name, temperature)
         self.max_tokens = max_tokens
         self.api_key = api_key or os.getenv("OPENAI_API_KEY", "")
         self.base_url = base_url or os.getenv("OPENAI_API_BASE") or os.getenv("OPENAI_BASE_URL")
         self.system_prompt = system_prompt or DEFAULT_SYSTEM_PROMPT
-        self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+        self.backend = (backend or "openai").lower()
+        if self.backend in {"azure", "azure_openai", "entra_id"}:
+            self.client = self._build_azure_client()
+        else:
+            self.client = OpenAI(api_key=self.api_key, base_url=self.base_url)
         self.turns: List[Dict[str, Any]] = []
         self._last_raw_output: Optional[str] = None
         self._last_reasoning_content: Optional[str] = None
@@ -76,6 +81,24 @@ class WebShopAgent(BaseAgent):
         self.turns = []
         self._last_raw_output = None
         self._last_reasoning_content = None
+
+    def _build_azure_client(self):
+        """Azure OpenAI client via Entra ID bearer token (no key on disk), with api_key
+        fallback. Mirrors memory-battle's auth so the comparison uses the same gpt-4o."""
+        from openai import AzureOpenAI
+
+        endpoint = self.base_url or os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+        key = self.api_key or os.getenv("AZURE_OPENAI_API_KEY")
+        if key:
+            return AzureOpenAI(azure_endpoint=endpoint, api_key=key, api_version=api_version)
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+        provider = get_bearer_token_provider(
+            DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+        )
+        return AzureOpenAI(azure_endpoint=endpoint, azure_ad_token_provider=provider,
+                           api_version=api_version)
 
     def record_turn(
         self,

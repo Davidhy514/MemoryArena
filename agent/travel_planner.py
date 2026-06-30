@@ -52,8 +52,10 @@ class TravelPlannerAgent(BaseAgent):
         max_steps: int = 30,
         db_path: str = None,
         system_prompt: str = None,
+        backend: str = "openai",
     ):
         super().__init__(model_name, temperature)
+        self.backend = (backend or "openai").lower()
         self.client = self._create_client(model_name)
         self.executor = ToolExecutor(db_path=db_path)
         self.max_steps = max_steps
@@ -89,7 +91,7 @@ class TravelPlannerAgent(BaseAgent):
                 return AnthropicClient(model_name=model_name)
         else:
             from env.env_systems.travel_planner_env.clients.openai_client import OpenAIClient
-            return OpenAIClient(model_name=model_name)
+            return OpenAIClient(model_name=model_name, backend=self.backend)
 
     def set_base_person(self, name: str, query: str, plan: str):
         self.base_name = name

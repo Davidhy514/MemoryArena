@@ -104,12 +104,14 @@ def load_config(config_path):
 
     ns = argparse.Namespace(
         model_name=agent.get("model_name", "gpt-4.1-mini"),
+        backend=agent.get("backend", "openai"),
         memory_system=memory.get("memory_system_name", "none"),
         use_step_memory=memory.get("use_step_memory", False),
         server_url=memory.get("server_url", "http://0.0.0.0:8000"),
         env_server_url=env.get("env_server_url", "http://0.0.0.0:8001"),
         judgement_mode=env.get("env_config", {}).get("judgement_mode", "none"),
         max_steps=task_specific.get("max_steps", 30),
+        limit=int(task_specific.get("limit", 0)),
         output_dir=output.get("output_dir", "./"),
         log_dir=output.get("log_dir", ""),
         global_csv=output.get("global_csv", ""),
@@ -160,12 +162,17 @@ def main():
 
     query_data_list = load_travel_data()
     print(f"Loaded {len(query_data_list)} data items")
+    _limit = getattr(args, "limit", 0) or 0
+    if _limit > 0:
+        query_data_list = query_data_list[:_limit]
+        print(f"Limiting to first {_limit} group(s)")
     if query_data_list:
         print('First item keys:', list(query_data_list[0].keys()))
 
     agent = TravelPlannerAgent(
         model_name=args.model_name,
         max_steps=args.max_steps,
+        backend=getattr(args, "backend", "openai"),
     )
 
     task_id = str(uuid.uuid4())
@@ -391,6 +398,9 @@ def main():
             f'{args.model_name}_sole-planning_results': final_parsed_results,
             'all_results': all_results,
             'scratchpads': all_scratchpads,
+            'base_person': ({'name': base_person['name'], 'query': base_person['query'],
+                             'plan': format_person_plan(base_person['name'], base_person['daily_plans'])}
+                            if base_person else None),
         }
 
         print(f"\n{'=' * 60}")

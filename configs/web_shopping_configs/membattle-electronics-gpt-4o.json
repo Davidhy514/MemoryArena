@@ -1,0 +1,47 @@
+{
+  "task_name": "shopping",
+
+  "agent": {
+    "model_name": "gpt-4o",
+    "temperature": 1.0,
+    "max_tokens": 4096,
+    "backend": "azure",
+    "api_key": "",
+    "base_url": ""
+  },
+
+  "memory": {
+    "use_step_memory": false,
+    "memory_system_name": "none",
+    "server_url": "http://0.0.0.0:8000",
+    "timeout": 300
+  },
+
+  "env": {
+    "env_name": "webshop",
+    "env_server_url": "http://0.0.0.0:8001",
+    "timeout": 3000,
+    "env_config": {
+      "bootstrap_upstream_env": false,
+      "restart_upstream_env": false,
+      "reuse_env": true,
+      "action_format": "react",
+      "enable_feedback": false
+    }
+  },
+
+  "task_specific": {
+    "task_file": "hf_task_cache/electronics/item_0.json",
+    "max_steps": 24,
+    "split_steps": true,
+    "resume": false,
+    "include_history": true
+  },
+
+  "output": {
+    "output_dir": "results/shopping/membattle/gpt-4o",
+    "save_trajectories": true,
+    "save_metrics": true,
+    "save_interactions": true
+  }
+}

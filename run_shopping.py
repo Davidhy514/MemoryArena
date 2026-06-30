@@ -891,6 +891,7 @@ def run_episode(
         max_tokens=args.max_tokens,
         api_key=args.api_key,
         base_url=args.model_base_url,
+        backend=getattr(args, "backend", "openai"),
     )
     agent.reset()
 

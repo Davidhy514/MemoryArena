@@ -1,0 +1,38 @@
+{
+  "task_name": "travel_planner",
+
+  "agent": {
+    "model_name": "gpt-4o",
+    "temperature": 0.0,
+    "backend": "azure",
+    "api_key": "",
+    "base_url": ""
+  },
+
+  "memory": {
+    "use_step_memory": false,
+    "memory_system_name": "none",
+    "server_url": "http://0.0.0.0:8000",
+    "timeout": 300
+  },
+
+  "env": {
+    "env_name": "travel_planner",
+    "env_server_url": "http://0.0.0.0:8001",
+    "timeout": 3000,
+    "env_config": {
+      "judgement_mode": "none"
+    }
+  },
+
+  "task_specific": {
+    "max_steps": 30,
+    "limit": 1
+  },
+
+  "output": {
+    "output_dir": "results/travel/membattle/gpt-4o",
+    "log_dir": "",
+    "global_csv": ""
+  }
+}

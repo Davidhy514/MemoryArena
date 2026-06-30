@@ -18,13 +18,37 @@ class OpenAIClient(BaseModelClient):
     OpenAI client with Tools API support.
     """
     
-    def __init__(self, model_name: str = "gpt-4o-mini", api_key: str = None, base_url: str = None):
+    def __init__(self, model_name: str = "gpt-4o-mini", api_key: str = None, base_url: str = None,
+                 backend: str = "openai"):
         super().__init__(model_name)
-        self.client = OpenAI(
-            api_key=api_key or os.environ.get("OPENAI_API_KEY"),
-            base_url=base_url or os.environ.get("OPENAI_API_BASE"),
-        )
+        self.backend = (backend or "openai").lower()
+        if self.backend in {"azure", "azure_openai", "entra_id"}:
+            self.client = self._build_azure_client(api_key, base_url)
+        else:
+            self.client = OpenAI(
+                api_key=api_key or os.environ.get("OPENAI_API_KEY"),
+                base_url=base_url or os.environ.get("OPENAI_API_BASE"),
+            )
         self.cost_tracker = CostTracker(model_name)
+
+    def _build_azure_client(self, api_key: str = None, base_url: str = None):
+        """Azure OpenAI via Entra ID bearer token (no key on disk), api_key fallback.
+        Mirrors the webshop agent so the comparison uses the same gpt-4o."""
+        from openai import AzureOpenAI
+
+        endpoint = base_url or os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
+        key = api_key or os.getenv("AZURE_OPENAI_API_KEY")
+        if key:
+            return AzureOpenAI(azure_endpoint=endpoint, api_key=key, api_version=api_version)
+        from azure.identity import DefaultAzureCredential, get_bearer_token_provider
+
+        provider = get_bearer_token_provider(
+            DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
+        )
+        return AzureOpenAI(azure_endpoint=endpoint, azure_ad_token_provider=provider,
+                           api_version=api_version)
+
     
     def chat_with_tools(
         self,
@@ -36,6 +60,9 @@ class OpenAIClient(BaseModelClient):
         """
         Send messages to OpenAI with tools enabled.
         """
+        # Azure gpt-4o caps completion tokens at 16384; clamp so the request doesn't 400.
+        if self.backend in {"azure", "azure_openai", "entra_id"}:
+            max_tokens = min(max_tokens, 16384)
         try:
             if self.model_name.startswith('gpt-5'):
                 # gpt-5 系列: 用 max_completion_tokens, 不传 temperature
