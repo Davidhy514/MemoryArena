@@ -280,7 +280,9 @@ def load_products(filepath, num_products=None, human_goals=True):
         products[i]['Rating'] = p.get('average_rating', 'N.A.') or 'N.A.'
 
         # Load reviews if available in product data, otherwise use empty list
-        products[i]['Reviews'] = []
+        # membattle: keep reviews supplied in the product data (poison-in-review vector); defaults to
+        # [] for base catalogs (identical to upstream behavior when no Reviews key is present).
+        products[i]['Reviews'] = p.get('Reviews', []) or []
         # If product data contains reviews, process them
         for r in products[i]['Reviews']:
             if 'score' not in r:

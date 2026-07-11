@@ -91,14 +91,15 @@ class WebShopAgent(BaseAgent):
         api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2025-04-01-preview")
         key = self.api_key or os.getenv("AZURE_OPENAI_API_KEY")
         if key:
-            return AzureOpenAI(azure_endpoint=endpoint, api_key=key, api_version=api_version)
+            return AzureOpenAI(azure_endpoint=endpoint, api_key=key, api_version=api_version,
+                               max_retries=2, timeout=120.0)
         from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
         provider = get_bearer_token_provider(
             DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default"
         )
         return AzureOpenAI(azure_endpoint=endpoint, azure_ad_token_provider=provider,
-                           api_version=api_version)
+                           api_version=api_version, max_retries=2, timeout=120.0)
 
     def record_turn(
         self,
