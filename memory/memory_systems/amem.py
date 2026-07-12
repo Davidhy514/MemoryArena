@@ -69,6 +69,14 @@ class AMemMemorySystem:
                     "context": getattr(n, "context", ""),
                     "tags": list(getattr(n, "tags", None) or []),
                     "keywords": list(getattr(n, "keywords", None) or []),
+                    "meta": {
+                        "context": getattr(n, "context", ""),
+                        "tags": list(getattr(n, "tags", None) or []),
+                        "keywords": list(getattr(n, "keywords", None) or []),
+                        "category": getattr(n, "category", "Uncategorized"),
+                        "timestamp": getattr(n, "timestamp", ""),
+                        "retrieval_count": getattr(n, "retrieval_count", 0),
+                    },
                 }
             )
         return out

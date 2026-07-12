@@ -89,6 +89,30 @@ class Mem0MemorySystem:
             return None
         return self.client.add(chunk, user_id=self.user_id, infer=self.infer)
 
+    def snapshot(self):
+        """Dump the complete flat Mem0 store for inspection/visualization."""
+        try:
+            result = self.client.get_all(filters={"user_id": self.user_id}, top_k=100000)
+        except TypeError:
+            try:
+                result = self.client.get_all(user_id=self.user_id, limit=100000)
+            except TypeError:
+                result = self.client.get_all(user_id=self.user_id)
+        memories = result.get("results", []) if isinstance(result, dict) else (result or [])
+        return [
+            {
+                "id": str(memory.get("id") or position),
+                "content": memory.get("memory") or "",
+                "links": [],
+                "meta": {
+                    key: memory.get(key)
+                    for key in ("categories", "created_at", "updated_at", "user_id")
+                    if memory.get(key) is not None
+                },
+            }
+            for position, memory in enumerate(memories)
+        ]
+
     def wrap_user_prompt(self, prompt: str):
         memories = self.client.search(prompt.lower(), filters={"user_id": self.user_id})
         if isinstance(memories, dict):
