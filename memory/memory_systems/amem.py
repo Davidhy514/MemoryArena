@@ -38,6 +38,39 @@ class AMemMemorySystem:
         )
         if azure_endpoint:
             self._route_llm_to_azure(azure_endpoint, llm_model)
+        self.last_retrieval_trace = []
+        self.last_write_trace = {}
+
+    @staticmethod
+    def _note_state(note):
+        return (note.context, tuple(note.tags or []), tuple(note.links or []))
+
+    def _normalize_and_sync_notes(self, before: dict) -> dict:
+        """Keep links valid and push evolution's neighbor metadata edits into Chroma.
+
+        A-Mem mutates neighbor context/tags in `self.memories`, but the original implementation
+        leaves the Chroma metadata stale. That makes intended contamination invisible when a
+        neighbor is retrieved directly. Re-index only notes that actually changed.
+        """
+        ms = self.memory_system
+        valid_ids = set(ms.memories)
+        changed = []
+        removed = 0
+        for memory_id, note in list(ms.memories.items()):
+            links = []
+            for link in note.links or []:
+                link_id = str(link)
+                if link_id in valid_ids and link_id != memory_id and link_id not in links:
+                    links.append(link_id)
+                else:
+                    removed += 1
+            note.links = links
+            if before.get(memory_id) != self._note_state(note):
+                changed.append(memory_id)
+        for memory_id in changed:
+            note = ms.memories[memory_id]
+            ms.update(memory_id, context=note.context, tags=note.tags, links=note.links)
+        return {"updated_note_ids": changed, "invalid_links_removed": removed}
 
     def _route_llm_to_azure(self, azure_endpoint: str, deployment: str) -> None:
         from openai import AzureOpenAI
@@ -143,23 +176,47 @@ class AMemMemorySystem:
                 tags=nd.get("tags") or [],
             )
             ms.memories[note.id] = note
+        # Saved research states may contain LLM-hallucinated/dangling link ids. They cannot be
+        # traversed, so drop them before rebuilding the derived vector index.
+        valid_ids = set(ms.memories)
+        removed = 0
+        for memory_id, note in ms.memories.items():
+            clean = []
+            for link in note.links or []:
+                link_id = str(link)
+                if link_id in valid_ids and link_id != memory_id and link_id not in clean:
+                    clean.append(link_id)
+                else:
+                    removed += 1
+            note.links = clean
         ms.evo_cnt = int(payload.get("evo_cnt", 0) or 0)
         # Rebuild the Chroma vector index from the notes -- local embeddings, NO LLM calls.
         ms.consolidate_memories()
-        return {"n_notes": len(ms.memories)}
+        return {"n_notes": len(ms.memories), "invalid_links_removed": removed}
 
     def add_chunk(self, chunk: str):
         if not chunk or not chunk.strip():
             return None
+        before = {
+            memory_id: self._note_state(note)
+            for memory_id, note in self.memory_system.memories.items()
+        }
         memory_id = self.memory_system.add_note(chunk)
+        sync = self._normalize_and_sync_notes(before)
         memory = self.memory_system.read(memory_id)
         if memory is None:
             return None
+        self.last_write_trace = {
+            "memory_id": memory_id,
+            "links": list(memory.links or []),
+            **sync,
+        }
         return {
             "content": memory.content,
             "keywords": memory.keywords,
             "context": memory.context,
             "tags": memory.tags,
+            "trace": self.last_write_trace,
         }
 
     def wrap_user_prompt(self, prompt: str):
@@ -174,6 +231,21 @@ class AMemMemorySystem:
         except (TypeError, ValueError):
             _k = 5
         results = self.memory_system.search_agentic(prompt.lower(), k=_k)
+        expand_links = os.environ.get("AMEM_LINK_EXPANSION", "1").strip().lower() \
+            not in {"0", "false", "no", "off"}
+        if not expand_links:
+            results = [result for result in results if not result.get("is_neighbor")]
+        self.last_retrieval_trace = [
+            {
+                "id": str(result.get("id", "")),
+                "is_neighbor": bool(result.get("is_neighbor")),
+                "score": result.get("score"),
+                "content": (result.get("content") or "")[:1200],
+                "context": result.get("context") or "",
+                "tags": list(result.get("tags") or []),
+            }
+            for result in results
+        ]
         memory_context_lines = ["<memory_context>"]
 
         if not results:
