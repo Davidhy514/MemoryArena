@@ -73,6 +73,73 @@ class AMemMemorySystem:
             )
         return out
 
+    def save_state(self, path):
+        """Serialize the full A-Mem state (note/link graph + evolution counter) to a JSON file.
+
+        The Chroma vector index is NOT saved: it is a pure function of the notes and is rebuilt
+        with local embeddings (no LLM) in load_state(). This lets a base memory reload in ~1s
+        instead of re-running the per-note metadata + link-evolution LLM calls.
+        """
+        import json as _json
+
+        ms = self.memory_system
+        notes = getattr(ms, "memories", {}) or {}
+        payload = {
+            "version": 1,
+            "model_name": getattr(ms, "model_name", "all-MiniLM-L6-v2"),
+            "evo_cnt": int(getattr(ms, "evo_cnt", 0) or 0),
+            "notes": [
+                {
+                    "id": str(n.id),
+                    "content": n.content,
+                    "keywords": list(n.keywords or []),
+                    "links": list(n.links or []),
+                    "context": n.context,
+                    "category": getattr(n, "category", "Uncategorized"),
+                    "tags": list(n.tags or []),
+                    "timestamp": n.timestamp,
+                    "last_accessed": n.last_accessed,
+                    "retrieval_count": int(n.retrieval_count or 0),
+                    "evolution_history": list(n.evolution_history or []),
+                }
+                for n in notes.values()
+            ],
+        }
+        with open(path, "w", encoding="utf-8") as f:
+            _json.dump(payload, f, ensure_ascii=False)
+        return {"n_notes": len(payload["notes"]),
+                "n_links": sum(len(n["links"]) for n in payload["notes"])}
+
+    def load_state(self, path):
+        """Rebuild A-Mem from a saved state file: reconstruct the note/link graph, then re-embed
+        into a fresh Chroma collection (local embeddings, NO LLM). Inverse of save_state()."""
+        import json as _json
+        from agentic_memory.memory_system import MemoryNote
+
+        with open(path, encoding="utf-8") as f:
+            payload = _json.load(f)
+        ms = self.memory_system
+        ms.memories = {}
+        for nd in payload.get("notes", []):
+            note = MemoryNote(
+                content=nd.get("content", ""),
+                id=nd.get("id"),
+                keywords=nd.get("keywords") or [],
+                links=nd.get("links") or [],
+                retrieval_count=nd.get("retrieval_count") or 0,
+                timestamp=nd.get("timestamp"),
+                last_accessed=nd.get("last_accessed"),
+                context=nd.get("context") or "General",
+                evolution_history=nd.get("evolution_history") or [],
+                category=nd.get("category") or "Uncategorized",
+                tags=nd.get("tags") or [],
+            )
+            ms.memories[note.id] = note
+        ms.evo_cnt = int(payload.get("evo_cnt", 0) or 0)
+        # Rebuild the Chroma vector index from the notes -- local embeddings, NO LLM calls.
+        ms.consolidate_memories()
+        return {"n_notes": len(ms.memories)}
+
     def add_chunk(self, chunk: str):
         if not chunk or not chunk.strip():
             return None
