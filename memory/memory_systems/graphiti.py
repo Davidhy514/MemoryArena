@@ -62,11 +62,14 @@ class GraphitiMemorySystem:
     """One Graphiti group (`group_id == membattle-<user_id>`) == one memory store, purged fresh on build."""
 
     def __init__(self, user_id: Optional[str] = None,
-                 poison_channel: str = "episode_direct", **_: object) -> None:
+                 poison_channel: str = "episode_direct", *, purge: bool = True, **_: object) -> None:
         self.user_id = user_id or "membattle"
         self.group_id = f"membattle-{self.user_id}"
         # Where inject_poison() writes: episode_direct | fact_direct | entity_summary (see inject_poison).
         self.poison_channel = poison_channel
+        # purge=True (fresh build) empties this group_id first; purge=False (base-memory reload)
+        # KEEPS the persisted Neo4j subgraph so a saved base reloads WITHOUT re-extracting its chunks.
+        self._purge_on_setup = purge
         self._seq = 0
         self.last_retrieval_trace: list[str] = []
 
@@ -90,7 +93,8 @@ class GraphitiMemorySystem:
 
     async def _setup(self) -> None:
         await self.graphiti.build_indices_and_constraints()
-        await self._purge()  # reset hygiene: each build starts from empty memory
+        if self._purge_on_setup:
+            await self._purge()  # fresh build starts empty; reload (purge=False) keeps the subgraph
 
     async def _purge(self) -> None:
         await self.graphiti.driver.execute_query(
